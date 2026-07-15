@@ -2,11 +2,16 @@
 const API_KEY = '10868b259f8a4b77b6ccb4879ae8bfb4'; 
 const BASE_URL = `https://openexchangerates.org/api/latest.json?app_id=${API_KEY}`;
 
-// 2. FETCH AND LIVE RATE DATA CALCULATION
+let myChartInstance = null;
+
+// Target 10 currencies as specified in SWEMLAB guidelines
+const TARGET_CURRENCIES = ['USD', 'GBP', 'EUR', 'CAD', 'GHS', 'ZAR', 'AED', 'CNY', 'JPY', 'SAR'];
+
+// 2. FETCH AND RATE DATA CALCULATION
 async function getNairaExchangeRates() {
     try {
         const response = await fetch(BASE_URL);
-        if (!response.ok) throw new Error(`API request failed with status: ${response.status}`);
+        if (!response.ok) throw new Error(`API request failed: ${response.status}`);
 
         const data = await response.json();
         const rates = data.rates;
@@ -14,10 +19,9 @@ async function getNairaExchangeRates() {
 
         if (!usdToNgn) throw new Error("Naira (NGN) data is currently unavailable.");
 
-        const targetCurrencies = ['USD', 'GBP', 'EUR'];
         const calculatedNgnRates = {};
 
-        targetCurrencies.forEach(currency => {
+        TARGET_CURRENCIES.forEach(currency => {
             if (currency === 'USD') {
                 calculatedNgnRates['USD'] = Number(usdToNgn.toFixed(2));
             } else if (rates[currency]) {
@@ -28,15 +32,74 @@ async function getNairaExchangeRates() {
             }
         });
 
-        console.log("Calculated Live Rates:", calculatedNgnRates);
         return calculatedNgnRates;
     } catch (error) {
-        console.error("Error fetching or parsing exchange rates:", error.message);
+        console.error("Error fetching rates:", error.message);
         return null;
     }
 }
 
-// 3. ALERT THRESHOLD EVALUATION (TRIGGER LOGIC)
+// 3. RENDER TABLE WITH COLOUR-CODED INDICATORS
+function renderRatesTable(liveRates) {
+    const tableBody = document.getElementById('ratesTableBody');
+    if (!tableBody) return;
+
+    // Retrieve previous rates from localStorage to compare changes
+    const cachedRates = JSON.parse(localStorage.getItem('previousNairaRates')) || {};
+    tableBody.innerHTML = '';
+
+    TARGET_CURRENCIES.forEach(currency => {
+        const currentRate = liveRates[currency];
+        const previousRate = cachedRates[currency];
+        
+        let indicatorClass = 'rate-stable';
+        let indicatorSymbol = '●'; // Stable
+
+        if (previousRate && currentRate) {
+            if (currentRate > previousRate) {
+                indicatorClass = 'rate-up';
+                indicatorSymbol = '▲';
+            } else if (currentRate < previousRate) {
+                indicatorClass = 'rate-down';
+                indicatorSymbol = '▼';
+            }
+        }
+
+        const row = `
+            <tr>
+                <td><strong>${currency}</strong></td>
+                <td>₦${currentRate ? currentRate.toLocaleString() : 'N/A'}</td>
+                <td class="${indicatorClass}">${indicatorSymbol}</td>
+            </tr>
+        `;
+        tableBody.insertAdjacentHTML('beforeend', row);
+    });
+
+    // Cache the current rates as the new "previous" benchmark for the next visit
+    localStorage.setItem('previousNairaRates', JSON.stringify(liveRates));
+}
+
+// 4. EXPORT TO CSV LOGIC
+function exportTableToCSV(liveRates) {
+    if (!liveRates) return;
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Currency,Rate in NGN (₦)\n"; // Headers
+
+    TARGET_CURRENCIES.forEach(currency => {
+        csvContent += `${currency},${liveRates[currency]}\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `NERT_Exchange_Rates_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// 5. ALERT THRESHOLD EVALUATION
 function checkAlertThresholds(liveRates) {
     const savedRuleString = localStorage.getItem('nairaAlertRule');
     if (!savedRuleString) return; 
@@ -47,17 +110,17 @@ function checkAlertThresholds(liveRates) {
     if (!currentLiveRate) return;
 
     if (rule.condition === 'above' && currentLiveRate > rule.targetRate) {
-        alert(`🚨 RATE ALERT: ${rule.currency} has gone ABOVE your threshold! \n\nTarget: ₦${rule.targetRate}\nCurrent Live Rate: ₦${currentLiveRate}`);
+        alert(`🚨 RATE ALERT: ${rule.currency} has gone ABOVE your threshold! \n\nTarget: ₦${rule.targetRate.toLocaleString()}\nCurrent Live Rate: ₦${currentLiveRate.toLocaleString()}`);
         localStorage.removeItem('nairaAlertRule'); 
         document.getElementById('statusMessage').innerText = ""; 
     } else if (rule.condition === 'below' && currentLiveRate < rule.targetRate) {
-        alert(`🚨 RATE ALERT: ${rule.currency} has gone BELOW your threshold! \n\nTarget: ₦${rule.targetRate}\nCurrent Live Rate: ₦${currentLiveRate}`);
+        alert(`🚨 RATE ALERT: ${rule.currency} has gone BELOW your threshold! \n\nTarget: ₦${rule.targetRate.toLocaleString()}\nCurrent Live Rate: ₦${currentLiveRate.toLocaleString()}`);
         localStorage.removeItem('nairaAlertRule'); 
         document.getElementById('statusMessage').innerText = "";
     }
 }
 
-// 4. SAVE USER RULES FROM THE FORM
+// 6. SAVE ALERT RULE
 function saveAlertRule(event) {
     event.preventDefault(); 
 
@@ -66,7 +129,7 @@ function saveAlertRule(event) {
     const targetRate = parseFloat(document.getElementById('thresholdInput').value);
     const statusMessage = document.getElementById('statusMessage');
 
-    if (!targetRate || targetRate <= 0) {
+    if (isNaN(targetRate) || targetRate <= 0) {
         statusMessage.style.color = "red";
         statusMessage.innerText = "Please enter a valid target rate.";
         return;
@@ -76,10 +139,14 @@ function saveAlertRule(event) {
     localStorage.setItem('nairaAlertRule', JSON.stringify(alertRule));
     
     statusMessage.style.color = "#22c55e"; 
-    statusMessage.innerText = `Success! Alert set for when ${currency} goes ${condition} ₦${targetRate}`;
+    statusMessage.innerText = `Success! Alert set for when ${currency} goes ${condition === 'above' ? 'above' : 'below'} ₦${targetRate.toLocaleString()}`;
+
+    getNairaExchangeRates().then(rates => {
+        if (rates) checkAlertThresholds(rates);
+    });
 }
 
-// 5. HISTORICAL DATA STORAGE & CHART RENDER
+// 7. HISTORICAL DATA STORAGE & CHART RENDER
 function saveRateToHistory(liveRates) {
     if (!liveRates || !liveRates['USD']) return [];
 
@@ -94,13 +161,12 @@ function saveRateToHistory(liveRates) {
         EUR: liveRates['EUR']
     };
 
-    // Prevent immediate duplicate clutter on quick test page refreshes
-    if (history.length > 0 && history[history.length - 1].USD === liveRates['USD'] && history.length >= 5) {
+    if (history.length > 0 && history[history.length - 1].USD === liveRates['USD']) {
         return history; 
     }
 
     history.push(newLogEntry);
-    if (history.length > 7) history.shift(); // Keep last 7 measurements 
+    if (history.length > 7) history.shift(); 
 
     localStorage.setItem('nairaRateHistory', JSON.stringify(history));
     return history;
@@ -114,7 +180,11 @@ function renderHistoricalChart(historyData) {
     const usdData = historyData.map(entry => entry.USD);
     const gbpData = historyData.map(entry => entry.GBP);
 
-    new Chart(ctx, {
+    if (myChartInstance) {
+        myChartInstance.destroy();
+    }
+
+    myChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
@@ -146,7 +216,9 @@ function renderHistoricalChart(historyData) {
     });
 }
 
-// 6. INITIALIZATION PIPELINE (The Connective Tissue)
+// 8. INITIALIZATION PIPELINE
+let currentLiveRatesGlobal = null;
+
 async function initTracker() {
     const statusMessage = document.getElementById('statusMessage');
     const liveRates = await getNairaExchangeRates();
@@ -154,26 +226,36 @@ async function initTracker() {
     if (!liveRates) {
         if (statusMessage) {
             statusMessage.style.color = "red";
-            statusMessage.innerText = "Failed to load live rates. Check your API key.";
+            statusMessage.innerText = "Failed to load live rates. Check API key.";
         }
         return;
     }
 
-    // 1. Evaluate alert limits
+    currentLiveRatesGlobal = liveRates;
+
+    renderRatesTable(liveRates);
     checkAlertThresholds(liveRates);
-
-    // 2. Log data array to internal memory
     const historyData = saveRateToHistory(liveRates);
-
-    // 3. Render the interactive line chart
     renderHistoricalChart(historyData);
 }
 
 window.addEventListener('DOMContentLoaded', () => {
     initTracker();
+    setInterval(initTracker, 300000); // 5 min background update
     
     const form = document.getElementById('thresholdForm');
     if (form) {
         form.addEventListener('submit', saveAlertRule);
+    }
+
+    const csvBtn = document.getElementById('exportCsvBtn');
+    if (csvBtn) {
+        csvBtn.addEventListener('click', () => {
+            if (currentLiveRatesGlobal) {
+                exportTableToCSV(currentLiveRatesGlobal);
+            } else {
+                alert("Rates are still loading. Please try again in a moment.");
+            }
+        });
     }
 });
