@@ -6,7 +6,7 @@
     <title>NERT - Naira Exchange Rate Tracker</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             background-color: #1e293b;
             color: #333;
             padding: 20px;
@@ -21,7 +21,7 @@
             display: flex;
             flex-direction: column;
             gap: 20px;
-            max-width: 500px;
+            max-width: 600px;
             width: 100%;
         }
         .card {
@@ -31,10 +31,17 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         }
         h2 {
-            margin-top: 10px;
+            margin-top: 5px;
             color: #111;
             font-size: 1.3rem;
             text-align: center;
+        }
+        .sub-header {
+            font-size: 0.8rem;
+            color: #64748b;
+            text-align: center;
+            margin-bottom: 15px;
+            margin-top: -5px;
         }
         .form-group {
             margin-bottom: 16px;
@@ -83,25 +90,39 @@
             font-weight: 500;
             min-height: 20px;
         }
-        .chart-container {
-            margin-top: 20px;
-            border-top: 1px solid #eee;
-            padding-top: 20px;
+        .banner-warning {
+            background-color: #fef3c7;
+            color: #92400e;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            text-align: center;
+            margin-bottom: 15px;
+            display: none;
+        }
+        .timestamp-badge {
+            display: inline-block;
+            background: #e2e8f0;
+            color: #334155;
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 12px;
+            margin-bottom: 10px;
         }
         .logo-container {
             text-align: center;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
         .logo-container img {
-            max-height: 90px;
+            max-height: 80px;
             width: auto;
             object-fit: contain;
         }
-        /* Table Styles */
+        /*  Indicators */
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 15px;
+            margin-top: 10px;
             font-size: 0.9rem;
         }
         th, td {
@@ -124,18 +145,117 @@
         .rate-stable {
             color: #64748b;
         }
+        .highlight-alert {
+            background-color: #fef2f2 !important;
+            border-left: 4px solid #ef4444;
+        }
+        /* Calculator Toggle */
+        .market-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .market-toggle label {
+            flex: 1;
+            text-align: center;
+            background: #f1f5f9;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .market-toggle input[type="radio"] {
+            display: none;
+        }
+        .market-toggle input[type="radio"]:checked + span {
+            font-weight: bold;
+            color: purple;
+        }
     </style>
 </head>
 <body>
 
     <div class="container">
+        <!--  OFFLINE DATA -->
+        <div id="systemBanner" class="banner-warning">
+            ⚠️ Rates last verified <span id="lastVerifiedTime">5</span> minutes ago due to network delays.
+        </div>
+
         <div class="card">
             <div class="logo-container">
                 <img src="FUTMINNA LOGO.jpeg" alt="FUTMINNA Logo">
             </div>
+            <h2>NERT Dual-Market Dashboard</h2>
+            <div class="sub-header">Department of Software Engineering (SICT)</div>
+            
+            <div style="text-align: center;">
+                <span class="timestamp-badge" id="liveTimestamp">Updated: Just now</span>
+            </div>
 
-            <h2>Set Rate Alert Threshold</h2>
+            <!-- CURRENCIES -->
+            <table id="ratesTable">
+                <thead>
+                    <tr>
+                        <th>Currency</th>
+                        <th>Rate (₦)</th>
+                        <th>Change</th>
+                    </tr>
+                </thead>
+                <tbody id="ratesTableBody">
+                    <tr>
+                        <td colspan="3" style="text-align: center; color: #64748b;">Loading live rates...</td>
+                    </tr>
+                </tbody>
+            </table>
+            <button id="exportCsvBtn" class="btn-secondary">Export Rate Table as CSV</button>
+        </div>
+
+        <!--  CALCULATOR(Freelancer) -->
+        <div class="card">
+            <h2>Freelancer Rate Calculator</h2>
+            <div class="market-toggle">
+                <label>
+                    <input type="radio" name="calcMarket" value="street" checked>
+                    <span>Parallel Market</span>
+                </label>
+                <label>
+                    <input type="radio" name="calcMarket" value="official">
+                    <span>Official NAFEM</span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="calcAmount">Amount in Foreign Currency</label>
+                <input type="number" id="calcAmount" placeholder="e.g. 500" min="0">
+            </div>
+            <div class="form-group">
+                <label for="calcCurrency">Currency</label>
+                <select id="calcCurrency">
+                    <option value="USD">USD ($)</option>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="CAD">CAD ($)</option>
+                    <option value="GHS">GHS (₵)</option>
+                    <option value="ZAR">ZAR (R)</option>
+                    <option value="AED">AED (د.إ)</option>
+                    <option value="CNY">CNY (¥)</option>
+                    <option value="JPY">JPY (¥)</option>
+                    <option value="SAR">SAR (ر.س)</option>
+                </select>
+            </div>
+            <div style="margin-top: 10px; font-size: 1.1rem; text-align: center; font-weight: bold;">
+                Estimated Value: <span id="calcResult" style="color: purple;">₦0.00</span>
+            </div>
+        </div>
+
+        <!--TARGET RATE ALERT FORM -->
+        <div class="card">
+            <h2>Set Target Rate Alert</h2>
             <form id="thresholdForm">
+                <div class="form-group">
+                    <label for="userEmail">Your Email Address</label>
+                    <input type="email" id="userEmail" placeholder="student@futminna.edu.ng" required>
+                </div>
+
                 <div class="form-group">
                     <label for="currencySelect">Select Currency</label>
                     <select id="currencySelect" required>
@@ -162,39 +282,29 @@
 
                 <div class="form-group">
                     <label for="thresholdInput">Target Rate (in ₦)</label>
-                    <input type="number" id="thresholdInput" placeholder="e.g. 1500" step="0.01" min="0" required>
+                    <input type="number" id="thresholdInput" placeholder="e.g. 1550" step="0.01" min="0" required>
                 </div>
 
-                <button type="submit">Save Alert Rule</button>
+                <button type="submit">Save Target Alert Rule</button>
             </form>
             
             <div id="statusMessage" class="status-msg"></div>
         </div>
 
-        <!-- NEW COMPLIANT SECTION: 10 Currencies Live Table with Indicators -->
+        <!-- CHART AND CURRENCY PAIR SELECTOR -->
         <div class="card">
-            <h2>Naira Exchange Rates (Base: ₦1 NGN)</h2>
-            <table id="ratesTable">
-                <thead>
-                    <tr>
-                        <th>Currency</th>
-                        <th>Rate (₦)</th>
-                        <th>Change</th>
-                    </tr>
-                </thead>
-                <tbody id="ratesTableBody">
-                    <tr>
-                        <td colspan="3" style="text-align: center; color: #64748b;">Loading live rates...</td>
-                    </tr>
-                </tbody>
-            </table>
-            <button id="exportCsvBtn" class="btn-secondary">Export Rate Table as CSV</button>
-        </div>
-
-        <div class="card">
-            <h2>Historical Trend (Last 7 Sessions)</h2>
+            <h2>Historical Trend</h2>
+            <div class="form-group">
+                <label for="chartCurrencySelect">Select Currency Pair for Chart</label>
+                <select id="chartCurrencySelect">
+                    <option value="USD">USD to NGN</option>
+                    <option value="GBP">GBP to NGN</option>
+                    <option value="EUR">EUR to NGN</option>
+                    <option value="CAD">CAD to NGN</option>
+                </select>
+            </div>
             <div class="chart-container">
-                <canvas id="rateHistoryChart" width="400" height="250"></canvas>
+                <canvas id="rateHistoryChart" width="400" height="200"></canvas>
             </div>
         </div>
     </div>
